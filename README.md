@@ -27,8 +27,8 @@ A modern web application that helps students and professionals calculate the env
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/louistrue/list-lca.git
-cd list-lca
+git clone https://github.com/louistrue/list-lca-bfh.git
+cd list-lca-bfh
 ```
 
 2. Install dependencies:

@@ -102,7 +102,7 @@ export default function WelcomeSection() {
           <span>
             Quellcode verfügbar auf{" "}
             <a
-              href="https://github.com/louistrue/list-lca"
+              href="https://github.com/louistrue/list-lca-bfh"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 dark:text-blue-400 hover:underline"
