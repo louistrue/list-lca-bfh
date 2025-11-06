@@ -87,34 +87,37 @@ export default function ConstructionLCACalculator() {
   };
 
   // Helper function to normalize CSV cell value to a number
-  // Handles thousand separators (apostrophes, commas), locale decimal separators, etc.
+  // Handles thousand separators (apostrophes, commas, dots, spaces), locale decimal separators, etc.
   const normalizeCSVNumber = (value: string): number => {
     if (!value || value.trim() === "") return 0;
-    
+
     let normalized = value.trim();
-    
+
     // Remove various apostrophe/quote characters (Swiss thousands separator)
     // Handle regular apostrophe ', right single quotation mark ', left single quotation mark ', 
     // and other Unicode quote variants
-    // Using Unicode property escapes to match all quote-like characters
     normalized = normalized.replace(/['''\u2018\u2019\u201A\u201B\u2032\u2035]/g, "");
-    
-    // Also remove any non-breaking spaces or other whitespace that might interfere
-    normalized = normalized.replace(/\u00A0/g, " ").trim();
-    
-    // Count dots and commas after removing apostrophes
+
+    // Remove ALL whitespace characters (spaces, non-breaking spaces, tabs, etc.)
+    // This handles formats like "12 345" or "1 234 567"
+    normalized = normalized.replace(/\s+/g, "");
+
+    // Count dots and commas after removing apostrophes and spaces
     const dotCount = (normalized.match(/\./g) || []).length;
     const commaCount = (normalized.match(/,/g) || []).length;
-    
-    // Handle Swiss format: "37'184.090" (apostrophe = thousands, dot = decimal)
-    // Handle US format: "37,184.090" (comma = thousands, dot = decimal)
-    // Handle European format: "37.184,090" (dot = thousands, comma = decimal)
-    
+
+    // Handle different number formats:
+    // Swiss: "37'184.090" (apostrophe = thousands, dot = decimal)
+    // US: "37,184.090" (comma = thousands, dot = decimal)
+    // European: "37.184,090" (dot = thousands, comma = decimal)
+    // European (dots only): "1.234.567" (all dots = thousands)
+    // Space-separated: "12 345" (space = thousands)
+
     if (dotCount > 0 && commaCount > 0) {
       // Both dots and commas present - determine format by last separator
       const lastDotIndex = normalized.lastIndexOf(".");
       const lastCommaIndex = normalized.lastIndexOf(",");
-      
+
       if (lastCommaIndex > lastDotIndex) {
         // European format: comma is decimal (e.g., "37.184,090")
         normalized = normalized.replace(/\./g, ""); // Remove dots (thousands)
@@ -129,28 +132,41 @@ export default function ConstructionLCACalculator() {
       normalized = normalized.replace(/,/g, "");
     } else if (commaCount === 1 && dotCount === 0) {
       // Single comma, no dots - could be decimal or thousands
-      // Check position: if near end, likely decimal; otherwise thousands
+      // Check characters after comma: if 3 or fewer, likely decimal; otherwise thousands
       const commaIndex = normalized.indexOf(",");
-      const length = normalized.length;
-      // If comma is in last 3 positions, treat as decimal
-      if (length - commaIndex <= 3) {
+      const charsAfter = normalized.length - commaIndex - 1;
+      // If 3 or fewer chars after comma, treat as decimal separator
+      if (charsAfter <= 3 && charsAfter > 0) {
         normalized = normalized.replace(/,/g, ".");
       } else {
         normalized = normalized.replace(/,/g, "");
       }
-    } else if (dotCount > 1) {
-      // Multiple dots = first ones are thousands separators
-      normalized = normalized.replace(/\.(?=.*\.)/g, ""); // Remove all dots except last
+    } else if (dotCount > 1 && commaCount === 0) {
+      // Multiple dots with no commas -> treat ALL as thousands separators (European format)
+      // e.g., "1.234.567" -> "1234567"
+      normalized = normalized.replace(/\./g, "");
+    } else if (dotCount === 1 && commaCount === 0) {
+      // Single dot, no commas - could be decimal or thousands
+      // Check characters after dot: if 3 or fewer, likely decimal; otherwise thousands
+      const dotIndex = normalized.indexOf(".");
+      const charsAfter = normalized.length - dotIndex - 1;
+      // If 3 or fewer chars after dot, treat as decimal separator; otherwise thousands
+      if (charsAfter <= 3 && charsAfter > 0) {
+        // Keep as decimal
+      } else {
+        // Treat as thousands separator, remove it
+        normalized = normalized.replace(/\./g, "");
+      }
     }
-    // If single dot, it's already the decimal separator, keep as is
-    
+    // If no dots or commas, number is already clean
+
     const parsed = parseFloat(normalized);
-    
+
     // Debug logging for suspicious values
-    if (value.includes("'") && parsed < 1000 && value.length > 5) {
+    if ((value.includes("'") || value.includes(" ") || dotCount > 1) && parsed < 1000 && value.length > 5) {
       console.warn(`Possible parsing issue: "${value}" -> ${parsed}`);
     }
-    
+
     return isNaN(parsed) ? 0 : parsed;
   };
 
@@ -227,8 +243,7 @@ export default function ConstructionLCACalculator() {
     } catch (error) {
       console.error("Error fetching LCA data:", error);
       setError(
-        `Failed to fetch LCA data: ${
-          error instanceof Error ? error.message : "Unknown error"
+        `Failed to fetch LCA data: ${error instanceof Error ? error.message : "Unknown error"
         }`
       );
       return data.map(
@@ -287,37 +302,37 @@ export default function ConstructionLCACalculator() {
           initialMapping={
             mappedData.length > 0
               ? (() => {
-                  // Compute column indices once and cache them
-                  const elementIdx = csvData[0]?.findIndex(
-                    (cell, idx) => cell === mappedData[0].element
-                  ) ?? -1;
-                  const materialIdx = csvData[0]?.findIndex(
-                    (cell, idx) => cell === mappedData[0].material
-                  ) ?? -1;
-                  
-                  // For quantity, normalize CSV values before comparing
-                  const quantityIdx = csvData[0]?.findIndex((cell) => {
-                    const normalizedCSV = normalizeCSVNumber(cell);
-                    const normalizedMapped = mappedData[0].quantity;
-                    // Compare with small epsilon to handle floating point precision
-                    return Math.abs(normalizedCSV - normalizedMapped) < 0.001;
-                  }) ?? -1;
+                // Compute column indices once and cache them
+                const elementIdx = csvData[0]?.findIndex(
+                  (cell, idx) => cell === mappedData[0].element
+                ) ?? -1;
+                const materialIdx = csvData[0]?.findIndex(
+                  (cell, idx) => cell === mappedData[0].material
+                ) ?? -1;
 
-                  return {
-                    element:
-                      elementIdx !== -1
-                        ? `${columns[elementIdx]}:${elementIdx}`
-                        : "",
-                    material:
-                      materialIdx !== -1
-                        ? `${columns[materialIdx]}:${materialIdx}`
-                        : "",
-                    quantity:
-                      quantityIdx !== -1
-                        ? `${columns[quantityIdx]}:${quantityIdx}`
-                        : "",
-                  };
-                })()
+                // For quantity, normalize CSV values before comparing
+                const quantityIdx = csvData[0]?.findIndex((cell) => {
+                  const normalizedCSV = normalizeCSVNumber(cell);
+                  const normalizedMapped = mappedData[0].quantity;
+                  // Compare with small epsilon to handle floating point precision
+                  return Math.abs(normalizedCSV - normalizedMapped) < 0.001;
+                }) ?? -1;
+
+                return {
+                  element:
+                    elementIdx !== -1
+                      ? `${columns[elementIdx]}:${elementIdx}`
+                      : "",
+                  material:
+                    materialIdx !== -1
+                      ? `${columns[materialIdx]}:${materialIdx}`
+                      : "",
+                  quantity:
+                    quantityIdx !== -1
+                      ? `${columns[quantityIdx]}:${quantityIdx}`
+                      : "",
+                };
+              })()
               : undefined
           }
           initialUnit={mappedData[0]?.unit as "kg" | "m3" | undefined}
