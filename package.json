@@ -2,6 +2,10 @@
   "name": "list-lca",
   "version": "0.1.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/louistrue/list-lca-bfh.git"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
