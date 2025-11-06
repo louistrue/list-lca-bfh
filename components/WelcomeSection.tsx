@@ -59,7 +59,7 @@ export default function WelcomeSection() {
 
             <ul className="list-disc list-inside space-y-2 ml-2">
               <li>Automatischer Zuordnung von KBOB Materialien</li>
-              <li>Berechnung von CO₂, UBP und Primärenergie</li>
+              <li>Berechnung von CO₂-eq, UBP und nicht erneuerbarer Primärenergie</li>
               <li>Gruppierung und Summierung ähnlicher Bauteile</li>
               <li>Export der Ergebnisse für weitere Analysen</li>
             </ul>

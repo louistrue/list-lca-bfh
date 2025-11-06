@@ -35,6 +35,60 @@ interface MaterialSelectProps {
     placeholder?: string;
 }
 
+// Component that only shows title if text is truncated
+function TruncatedText({
+    children,
+    className = ""
+}: {
+    children: string;
+    className?: string;
+}) {
+    const ref = React.useRef<HTMLSpanElement>(null);
+    const observerRef = React.useRef<ResizeObserver | null>(null);
+    const [isTruncated, setIsTruncated] = React.useState(false);
+
+    React.useEffect(() => {
+        const checkTruncation = () => {
+            if (ref.current) {
+                setIsTruncated(ref.current.scrollWidth > ref.current.clientWidth);
+            }
+        };
+
+        // Check after a small delay to ensure DOM is rendered
+        const timeoutId = setTimeout(() => {
+            checkTruncation();
+
+            // Use ResizeObserver for more accurate detection
+            if (ref.current && typeof ResizeObserver !== 'undefined') {
+                observerRef.current = new ResizeObserver(checkTruncation);
+                observerRef.current.observe(ref.current);
+            }
+        }, 0);
+
+        // Check on resize
+        window.addEventListener('resize', checkTruncation);
+
+        return () => {
+            clearTimeout(timeoutId);
+            window.removeEventListener('resize', checkTruncation);
+            if (observerRef.current) {
+                observerRef.current.disconnect();
+                observerRef.current = null;
+            }
+        };
+    }, [children]);
+
+    return (
+        <span
+            ref={ref}
+            className={className}
+            title={isTruncated ? children : undefined}
+        >
+            {children}
+        </span>
+    );
+}
+
 export default function MaterialSelect({
     materials,
     selectedMaterial,
@@ -56,6 +110,8 @@ export default function MaterialSelect({
         );
     }, [materials, searchQuery]);
 
+    const displayText = selectedMaterial || placeholder;
+
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
@@ -63,11 +119,11 @@ export default function MaterialSelect({
                     variant="outline"
                     role="combobox"
                     aria-expanded={open}
-                    className="w-full justify-between"
+                    className="w-full justify-between min-w-0"
                 >
-                    <span className="truncate">
-                        {selectedMaterial || placeholder}
-                    </span>
+                    <TruncatedText className="truncate flex-1 text-left">
+                        {displayText}
+                    </TruncatedText>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>

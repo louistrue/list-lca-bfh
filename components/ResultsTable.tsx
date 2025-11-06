@@ -110,6 +110,60 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// Component that only shows title if text is truncated
+function TruncatedText({
+  children,
+  className = ""
+}: {
+  children: string;
+  className?: string;
+}) {
+  const ref = React.useRef<HTMLSpanElement>(null);
+  const observerRef = React.useRef<ResizeObserver | null>(null);
+  const [isTruncated, setIsTruncated] = React.useState(false);
+
+  React.useEffect(() => {
+    const checkTruncation = () => {
+      if (ref.current) {
+        setIsTruncated(ref.current.scrollWidth > ref.current.clientWidth);
+      }
+    };
+
+    // Check after a small delay to ensure DOM is rendered
+    const timeoutId = setTimeout(() => {
+      checkTruncation();
+
+      // Use ResizeObserver for more accurate detection
+      if (ref.current && typeof ResizeObserver !== 'undefined') {
+        observerRef.current = new ResizeObserver(checkTruncation);
+        observerRef.current.observe(ref.current);
+      }
+    }, 0);
+
+    // Check on resize
+    window.addEventListener('resize', checkTruncation);
+
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('resize', checkTruncation);
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+        observerRef.current = null;
+      }
+    };
+  }, [children]);
+
+  return (
+    <span
+      ref={ref}
+      className={className}
+      title={isTruncated ? children : undefined}
+    >
+      {children}
+    </span>
+  );
+}
+
 export default function ResultsTable({
   data,
   originalHeaders,
@@ -149,12 +203,12 @@ export default function ResultsTable({
         ),
         cell: ({ row }) => {
           const isGrouped = row.getIsGrouped();
-          
+
           if (isGrouped) {
             const groupRows = row.getLeafRows();
             const allSelected = groupRows.every((r) => r.getIsSelected());
             const someSelected = groupRows.some((r) => r.getIsSelected());
-            
+
             return (
               <input
                 type="checkbox"
@@ -172,7 +226,7 @@ export default function ResultsTable({
               />
             );
           }
-          
+
           return (
             <input
               type="checkbox"
@@ -185,6 +239,8 @@ export default function ResultsTable({
         enableGrouping: false,
         enableSorting: false,
         size: 50,
+        minSize: 50,
+        maxSize: 50,
       },
       {
         accessorKey: "element",
@@ -192,28 +248,31 @@ export default function ResultsTable({
           <Button
             variant="ghost"
             onClick={() => column.toggleSorting()}
-            className="h-auto p-0 font-medium hover:bg-transparent"
+            className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-left"
           >
-            Element
+            <span className="inline-block">Element</span>
             {column.getIsSorted() === "asc" ? (
-              <ArrowUp className="ml-2 h-4 w-4" />
+              <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
             ) : column.getIsSorted() === "desc" ? (
-              <ArrowDown className="ml-2 h-4 w-4" />
+              <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
             ) : (
-              <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
             )}
           </Button>
         ),
+        size: 120,
+        minSize: 100,
+        maxSize: 150,
         cell: ({ row, table }) => {
           const isGrouped = table.getState().grouping.length > 0;
           const isGroupedRow = row.getIsGrouped();
 
           if (isGroupedRow) {
             return (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <button
                   onClick={row.getToggleExpandedHandler()}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-[#24283b] rounded"
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-[#24283b] rounded shrink-0"
                 >
                   {row.getIsExpanded() ? (
                     <ChevronDown className="w-4 h-4" />
@@ -221,15 +280,16 @@ export default function ResultsTable({
                     <ChevronRight className="w-4 h-4" />
                   )}
                 </button>
-                <span className="font-medium">{row.getValue<string>("element")}</span>
-                <Badge variant="secondary" className="ml-2">
+                <TruncatedText className="font-medium truncate">{row.getValue<string>("element")}</TruncatedText>
+                <Badge variant="secondary" className="ml-2 shrink-0">
                   {row.subRows.length} {row.subRows.length === 1 ? "Zeile" : "Zeilen"}
                 </Badge>
               </div>
             );
           }
 
-          return <span>{row.getValue<string>("element")}</span>;
+          const value = row.getValue<string>("element");
+          return <TruncatedText className="truncate block">{value}</TruncatedText>;
         },
         enableGrouping: true,
       },
@@ -239,24 +299,29 @@ export default function ResultsTable({
           <Button
             variant="ghost"
             onClick={() => column.toggleSorting()}
-            className="h-auto p-0 font-medium hover:bg-transparent"
+            className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-left"
           >
-            Material
+            <span className="inline-block">Material</span>
             {column.getIsSorted() === "asc" ? (
-              <ArrowUp className="ml-2 h-4 w-4" />
+              <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
             ) : column.getIsSorted() === "desc" ? (
-              <ArrowDown className="ml-2 h-4 w-4" />
+              <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
             ) : (
-              <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
             )}
           </Button>
         ),
+        size: 120,
+        minSize: 100,
+        maxSize: 150,
         cell: ({ row }) => {
           const isGrouped = row.getIsGrouped();
           if (isGrouped) {
-            return <span className="font-medium">{row.getValue<string>("material")}</span>;
+            const value = row.getValue<string>("material");
+            return <TruncatedText className="font-medium truncate">{value}</TruncatedText>;
           }
-          return <span>{row.getValue<string>("material")}</span>;
+          const value = row.getValue<string>("material");
+          return <TruncatedText className="truncate block">{value}</TruncatedText>;
         },
         enableGrouping: true,
       },
@@ -267,42 +332,48 @@ export default function ResultsTable({
           <Button
             variant="ghost"
             onClick={() => column.toggleSorting()}
-            className="h-auto p-0 font-medium hover:bg-transparent"
+            className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-left"
           >
-            Zugeordnetes Material
+            <span className="inline-block">Zugeordnetes Material</span>
             {column.getIsSorted() === "asc" ? (
-              <ArrowUp className="ml-2 h-4 w-4" />
+              <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
             ) : column.getIsSorted() === "desc" ? (
-              <ArrowDown className="ml-2 h-4 w-4" />
+              <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
             ) : (
-              <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
             )}
           </Button>
         ),
+        size: 160,
+        minSize: 130,
+        maxSize: 200,
         cell: ({ row }) => {
           const isGrouped = row.getIsGrouped();
           if (isGrouped) {
-            return <span className="font-medium">{row.getValue<string>("matchedMaterial")}</span>;
+            const value = row.getValue<string>("matchedMaterial");
+            return <TruncatedText className="font-medium truncate">{value}</TruncatedText>;
           }
 
           const rowData = row.original;
           const rowIndex = parseInt(row.id);
 
           return (
-            <MaterialSelect
-              materials={rowData.availableMaterials}
-              selectedMaterial={rowData.matchedMaterial}
-              onSelect={(material) => {
-                const selectedRows = table
-                  .getSelectedRowModel()
-                  .rows.map((r) => parseInt(r.id));
-                const indices = selectedRows.includes(rowIndex)
-                  ? selectedRows
-                  : [rowIndex];
-                onUpdateMaterial?.(indices, material);
-              }}
-              showDensity={rowData.unit === "m3"}
-            />
+            <div className="min-w-0">
+              <MaterialSelect
+                materials={rowData.availableMaterials}
+                selectedMaterial={rowData.matchedMaterial}
+                onSelect={(material) => {
+                  const selectedRows = table
+                    .getSelectedRowModel()
+                    .rows.map((r) => parseInt(r.id));
+                  const indices = selectedRows.includes(rowIndex)
+                    ? selectedRows
+                    : [rowIndex];
+                  onUpdateMaterial?.(indices, material);
+                }}
+                showDensity={rowData.unit === "m3"}
+              />
+            </div>
           );
         },
         enableGrouping: true,
@@ -314,19 +385,22 @@ export default function ResultsTable({
             <Button
               variant="ghost"
               onClick={() => column.toggleSorting()}
-              className="h-auto p-0 font-medium hover:bg-transparent"
+              className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-right justify-end"
             >
-              {data[0]?.unit === "m3" ? "Volumen (m³)" : "Masse (kg)"}
+              <span className="inline-block">{data[0]?.unit === "m3" ? "Volumen (m³)" : "Masse (kg)"}</span>
               {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
+                <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
               ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
+                <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
               ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
               )}
             </Button>
           </div>
         ),
+        size: 110,
+        minSize: 90,
+        maxSize: 130,
         cell: ({ row }) => {
           const isGrouped = row.getIsGrouped();
           const value = row.getValue<number>("quantity");
@@ -350,64 +424,70 @@ export default function ResultsTable({
       },
       ...(data[0]?.unit === "m3"
         ? [
-            {
-              accessorKey: "density" as const,
-              header: () => (
-                <div className="text-right">Dichte (kg/m³)</div>
-              ),
-              cell: ({ row }: { row: any }) => {
-                const value = row.original.density;
+          {
+            accessorKey: "density" as const,
+            header: () => (
+              <div className="text-right whitespace-normal leading-tight">Dichte (kg/m³)</div>
+            ),
+            cell: ({ row }: { row: any }) => {
+              const value = row.original.density;
+              return (
+                <div className="text-right">
+                  {value ? value.toFixed(2) : "N/A"}
+                </div>
+              );
+            },
+            enableGrouping: false,
+            enableSorting: false,
+            size: 120,
+            minSize: 100,
+            maxSize: 140,
+          } as ColumnDef<MaterialData>,
+          {
+            accessorKey: "kg" as const,
+            header: ({ column }) => (
+              <div className="text-right">
+                <Button
+                  variant="ghost"
+                  onClick={() => column.toggleSorting()}
+                  className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-right justify-end"
+                >
+                  <span className="inline-block">Masse (kg)</span>
+                  {column.getIsSorted() === "asc" ? (
+                    <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
+                  ) : column.getIsSorted() === "desc" ? (
+                    <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
+                  ) : (
+                    <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
+                  )}
+                </Button>
+              </div>
+            ),
+            size: 120,
+            minSize: 100,
+            maxSize: 140,
+            cell: ({ row }) => {
+              const isGrouped = row.getIsGrouped();
+              const value = row.getValue<number>("kg");
+              if (isGrouped) {
+                const leafRows = row.getLeafRows();
+                const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("kg") || 0), 0);
                 return (
-                  <div className="text-right">
-                    {value ? value.toFixed(2) : "N/A"}
+                  <div className="text-right font-medium">
+                    {aggregated.toFixed(2)}
                   </div>
                 );
-              },
-              enableGrouping: false,
-              enableSorting: false,
-            } as ColumnDef<MaterialData>,
-            {
-              accessorKey: "kg" as const,
-              header: ({ column }) => (
-                <div className="text-right">
-                  <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting()}
-                    className="h-auto p-0 font-medium hover:bg-transparent"
-                  >
-                    Masse (kg)
-                    {column.getIsSorted() === "asc" ? (
-                      <ArrowUp className="ml-2 h-4 w-4" />
-                    ) : column.getIsSorted() === "desc" ? (
-                      <ArrowDown className="ml-2 h-4 w-4" />
-                    ) : (
-                      <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
-                    )}
-                  </Button>
-                </div>
-              ),
-              cell: ({ row }) => {
-                const isGrouped = row.getIsGrouped();
-                const value = row.getValue<number>("kg");
-                if (isGrouped) {
-                  const leafRows = row.getLeafRows();
-                  const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("kg") || 0), 0);
-                  return (
-                    <div className="text-right font-medium">
-                      {aggregated.toFixed(2)}
-                    </div>
-                  );
-                }
-                return <div className="text-right">{value.toFixed(2)}</div>;
-              },
-              aggregationFn: (columnId, leafRows) => {
-                return leafRows.reduce((sum, row) => {
-                  const value = row.getValue<number>(columnId);
-                  return sum + (typeof value === 'number' ? value : 0);
-                }, 0);
-              },
-            } as ColumnDef<MaterialData>,
-          ]
+              }
+              return <div className="text-right">{value.toFixed(2)}</div>;
+            },
+            aggregationFn: (columnId, leafRows) => {
+              return leafRows.reduce((sum, row) => {
+                const value = row.getValue<number>(columnId);
+                return sum + (typeof value === 'number' ? value : 0);
+              }, 0);
+            },
+          } as ColumnDef<MaterialData>,
+        ]
         : []),
       {
         accessorKey: "co2",
@@ -416,19 +496,22 @@ export default function ResultsTable({
             <Button
               variant="ghost"
               onClick={() => column.toggleSorting()}
-              className="h-auto p-0 font-medium hover:bg-transparent"
+              className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-right justify-end"
             >
-              CO₂ (kg CO₂ eq)
+              <span className="inline-block">CO₂-eq</span>
               {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
+                <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
               ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
+                <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
               ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
               )}
             </Button>
           </div>
         ),
+        size: 110,
+        minSize: 90,
+        maxSize: 130,
         cell: ({ row }) => {
           const isGrouped = row.getIsGrouped();
           const value = row.getValue<number>("co2");
@@ -457,19 +540,22 @@ export default function ResultsTable({
             <Button
               variant="ghost"
               onClick={() => column.toggleSorting()}
-              className="h-auto p-0 font-medium hover:bg-transparent"
+              className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-right justify-end"
             >
-              UBP (Pkt)
+              <span className="inline-block">UBP (Pkt)</span>
               {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
+                <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
               ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
+                <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
               ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
               )}
             </Button>
           </div>
         ),
+        size: 110,
+        minSize: 90,
+        maxSize: 130,
         cell: ({ row }) => {
           const isGrouped = row.getIsGrouped();
           const value = row.getValue<number>("ubp");
@@ -498,19 +584,22 @@ export default function ResultsTable({
             <Button
               variant="ghost"
               onClick={() => column.toggleSorting()}
-              className="h-auto p-0 font-medium hover:bg-transparent"
+              className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-right justify-end"
             >
-              Energie (kWh)
+              <span className="inline-block">PENR (kWh)</span>
               {column.getIsSorted() === "asc" ? (
-                <ArrowUp className="ml-2 h-4 w-4" />
+                <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
               ) : column.getIsSorted() === "desc" ? (
-                <ArrowDown className="ml-2 h-4 w-4" />
+                <ArrowDown className="ml-1 h-4 w-4 shrink-0" />
               ) : (
-                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                <ArrowUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
               )}
             </Button>
           </div>
         ),
+        size: 100,
+        minSize: 85,
+        maxSize: 120,
         cell: ({ row }) => {
           const isGrouped = row.getIsGrouped();
           const value = row.getValue<number>("kwh");
@@ -678,9 +767,8 @@ export default function ResultsTable({
     const url = URL.createObjectURL(blob);
     const filename =
       selectedIndices.length > 0
-        ? `lca-results-${selectedIndices.length}-selected-${
-            new Date().toISOString().split("T")[0]
-          }.csv`
+        ? `lca-results-${selectedIndices.length}-selected-${new Date().toISOString().split("T")[0]
+        }.csv`
         : `lca-results-all-${new Date().toISOString().split("T")[0]}.csv`;
 
     link.setAttribute("href", url);
@@ -808,29 +896,31 @@ export default function ResultsTable({
           className="overflow-auto"
           style={{ height: "600px" }}
         >
-          <table className="w-full border-collapse">
+          <table className="border-collapse" style={{ minWidth: "max-content", width: "100%" }}>
             <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-[#24283b]">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
                     <th
                       key={header.id}
-                      className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6] border-b border-gray-200 dark:border-[#24283b]"
+                      className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6] border-b border-gray-200 dark:border-[#24283b]"
                       style={{
-                        width: header.getSize() !== 150 ? header.getSize() : undefined,
+                        width: header.getSize(),
+                        minWidth: header.column.columnDef.minSize,
+                        maxWidth: header.column.columnDef.maxSize,
                       }}
                     >
                       {header.isPlaceholder
                         ? null
                         : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-              </th>
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                    </th>
                   ))}
-            </tr>
+                </tr>
               ))}
-          </thead>
+            </thead>
             <tbody className="bg-white dark:bg-[#1a1b26]">
               {rows.length === 0 ? (
                 <tr>
@@ -853,7 +943,7 @@ export default function ResultsTable({
                       className={cn(
                         "border-b border-gray-200 dark:border-[#24283b]",
                         row.getIsSelected() &&
-                          "bg-blue-50 dark:bg-[#24283b]",
+                        "bg-blue-50 dark:bg-[#24283b]",
                         "hover:bg-gray-50 dark:hover:bg-[#292e42]"
                       )}
                       style={{
@@ -864,7 +954,12 @@ export default function ResultsTable({
                       {row.getVisibleCells().map((cell) => (
                         <td
                           key={cell.id}
-                          className="px-4 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
+                          className="px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
+                          style={{
+                            width: cell.column.getSize(),
+                            minWidth: cell.column.columnDef.minSize,
+                            maxWidth: cell.column.columnDef.maxSize,
+                          }}
                         >
                           {flexRender(
                             cell.column.columnDef.cell,
@@ -872,7 +967,7 @@ export default function ResultsTable({
                           )}
                         </td>
                       ))}
-                          </tr>
+                    </tr>
                   );
                 })
               ) : (
@@ -883,7 +978,7 @@ export default function ResultsTable({
                     className={cn(
                       "border-b border-gray-200 dark:border-[#24283b]",
                       row.getIsSelected() &&
-                        "bg-blue-50 dark:bg-[#24283b]",
+                      "bg-blue-50 dark:bg-[#24283b]",
                       "hover:bg-gray-50 dark:hover:bg-[#292e42]",
                       row.getIsGrouped() && "bg-gray-50 dark:bg-[#24283b]"
                     )}
@@ -891,19 +986,24 @@ export default function ResultsTable({
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        className="px-4 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
+                        className="px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
+                        style={{
+                          width: cell.column.getSize(),
+                          minWidth: cell.column.columnDef.minSize,
+                          maxWidth: cell.column.columnDef.maxSize,
+                        }}
                       >
                         {flexRender(
                           cell.column.columnDef.cell,
                           cell.getContext()
                         )}
-                    </td>
+                      </td>
                     ))}
                   </tr>
                 ))
               )}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
         </div>
 
         {/* Pagination */}
@@ -917,7 +1017,7 @@ export default function ResultsTable({
               bis{" "}
               {Math.min(
                 (table.getState().pagination.pageIndex + 1) *
-                  table.getState().pagination.pageSize,
+                table.getState().pagination.pageSize,
                 table.getFilteredRowModel().rows.length
               )}{" "}
               von {table.getFilteredRowModel().rows.length} Zeilen

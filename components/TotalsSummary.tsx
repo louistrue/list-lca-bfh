@@ -26,7 +26,7 @@ export default function TotalsSummary({ data }: TotalsSummaryProps) {
       label: "CO₂ Emissions",
       value: `${data.totalCO2.toLocaleString("de-CH", {
         maximumFractionDigits: 0,
-      })} kg CO₂ eq`,
+      })} kg CO₂-eq`,
       icon: Leaf,
       description: "Global Warming Potential",
     },

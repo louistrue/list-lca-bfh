@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata = {
   title:
     "Ökobilanzierung: MAS BFH-AHB Digitales Bauen | Master Wood Technology BIM",
-  description: "Ökobilanzierung-Tool für BFH-AHB: Berechnung von CO₂, UBP und Primärenergie für Bauprojekte. Master Wood Technology BIM | Building Information Modelling.",
+  description: "Ökobilanzierung-Tool für BFH-AHB: Berechnung von CO₂-eq, UBP und nicht erneuerbarer Primärenergie für Bauprojekte. Master Wood Technology BIM | Building Information Modelling.",
 };
 
 export default function RootLayout({
