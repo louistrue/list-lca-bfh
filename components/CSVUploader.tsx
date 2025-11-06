@@ -15,8 +15,26 @@ export default function CSVUploader({ onUpload }: CSVUploaderProps) {
       complete: (results) => {
         const data = results.data as string[][]
         const headers = data[0]
+        // Debug: log first row to check parsing, especially volume column
+        if (data.length > 1) {
+          console.log('CSV First row sample:', data[1].slice(0, 10))
+          // Find GrossVolume column index
+          const volumeIdx = headers.findIndex(h => h.toLowerCase().includes('volume'))
+          if (volumeIdx >= 0 && data[1][volumeIdx]) {
+            console.log(`Volume column (${headers[volumeIdx]}): "${data[1][volumeIdx]}"`)
+          }
+        }
         onUpload(data.slice(1), headers)
       },
+      // Ensure apostrophes are not treated as quote characters
+      quoteChar: '"',
+      escapeChar: '"',
+      // Don't skip empty lines
+      skipEmptyLines: false,
+      // Handle encoding properly
+      encoding: 'UTF-8',
+      // Don't transform values - keep them as strings for our normalization
+      transform: undefined,
     })
   }
 

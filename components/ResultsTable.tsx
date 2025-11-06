@@ -46,7 +46,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import MaterialSelect from "./MaterialSelect";
 import TotalsSummary from "./TotalsSummary";
-import { cn } from "@/lib/utils";
+import { cn, formatMass } from "@/lib/utils";
 
 interface MaterialOption {
   id: string;
@@ -110,7 +110,7 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
-// Format number with Swiss locale (apostrophes as thousands separator, 2 decimal places)
+// Format number with Swiss locale (apostrophes as thousands separator, smart decimal places)
 function formatNumber(value: number | null | undefined): string {
   if (value === null || value === undefined || isNaN(value)) {
     return "N/A";
@@ -118,8 +118,9 @@ function formatNumber(value: number | null | undefined): string {
   // Round to 2 decimal places
   const rounded = Math.round(value * 100) / 100;
   // Format with Swiss locale (de-CH) which uses apostrophes as thousands separator
+  // Show decimals only when needed (not .00 for whole numbers)
   return rounded.toLocaleString("de-CH", {
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
 }
@@ -466,7 +467,7 @@ export default function ResultsTable({
                   onClick={() => column.toggleSorting()}
                   className="h-auto p-0 font-medium hover:bg-transparent whitespace-normal leading-tight text-right justify-end"
                 >
-                  <span className="inline-block">Masse (kg)</span>
+                  <span className="inline-block">Masse (kg/t)</span>
                   {column.getIsSorted() === "asc" ? (
                     <ArrowUp className="ml-1 h-4 w-4 shrink-0" />
                   ) : column.getIsSorted() === "desc" ? (
@@ -488,11 +489,11 @@ export default function ResultsTable({
                 const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("kg") || 0), 0);
                 return (
                   <div className="text-right font-medium">
-                    {formatNumber(aggregated)}
+                    {formatMass(aggregated)}
                   </div>
                 );
               }
-              return <div className="text-right">{formatNumber(value)}</div>;
+              return <div className="text-right">{formatMass(value)}</div>;
             },
             aggregationFn: (columnId, leafRows) => {
               return leafRows.reduce((sum, row) => {
