@@ -49,14 +49,14 @@ export async function POST(req: Request) {
         }
 
         try {
-          console.log("API Key being used:", LCADATA_API_KEY);
+          console.log("Fetching LCA materials from:", LCA_API_URL);
 
           const response = await fetch(LCA_API_URL, {
             method: "GET",
             headers: {
               Accept: "application/json",
               "Content-Type": "application/json",
-              "x-api-key": ` ${LCADATA_API_KEY}`,
+              "x-api-key": LCADATA_API_KEY,
             },
             cache: "no-store",
           });
@@ -178,9 +178,12 @@ export async function POST(req: Request) {
     return NextResponse.json(dataWithLCA);
   } catch (error) {
     console.error("Error processing request:", error);
+    const errorMessage = error instanceof Error ? error.message : "Internal server error";
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    console.error("Error stack:", errorStack);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Internal server error",
+        error: errorMessage,
       },
       { status: 500 }
     );

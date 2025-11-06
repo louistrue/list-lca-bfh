@@ -87,7 +87,7 @@ export default function ConstructionLCACalculator() {
   };
 
   const handleColumnMapping = async (
-    mapping: Record<string, string>,
+    mapping: Record<string, number>,
     unit: "kg" | "m3"
   ) => {
     setIsLoading(true);
@@ -95,13 +95,13 @@ export default function ConstructionLCACalculator() {
     try {
       const mappedData = csvData.map((row, index) => {
         const element =
-          row[columns.indexOf(mapping.element)] ||
+          row[mapping.element] ||
           `Unknown Element ${index + 1}`;
         const material =
-          row[columns.indexOf(mapping.material)] ||
+          row[mapping.material] ||
           `Unknown Material ${index + 1}`;
         const quantityValue = parseFloat(
-          row[columns.indexOf(mapping.quantity)]
+          row[mapping.quantity]
         );
 
         return {
@@ -216,23 +216,26 @@ export default function ConstructionLCACalculator() {
             mappedData.length > 0
               ? {
                   element:
-                    columns.find(
-                      (col) =>
-                        csvData[0][columns.indexOf(col)] ===
-                        mappedData[0].element
-                    ) || "",
+                    columns.findIndex(
+                      (col, idx) =>
+                        csvData[0][idx] === mappedData[0].element
+                    ) !== -1
+                      ? `${columns[columns.findIndex((col, idx) => csvData[0][idx] === mappedData[0].element)]}:${columns.findIndex((col, idx) => csvData[0][idx] === mappedData[0].element)}`
+                      : "",
                   material:
-                    columns.find(
-                      (col) =>
-                        csvData[0][columns.indexOf(col)] ===
-                        mappedData[0].material
-                    ) || "",
+                    columns.findIndex(
+                      (col, idx) =>
+                        csvData[0][idx] === mappedData[0].material
+                    ) !== -1
+                      ? `${columns[columns.findIndex((col, idx) => csvData[0][idx] === mappedData[0].material)]}:${columns.findIndex((col, idx) => csvData[0][idx] === mappedData[0].material)}`
+                      : "",
                   quantity:
-                    columns.find(
-                      (col) =>
-                        csvData[0][columns.indexOf(col)] ===
-                        String(mappedData[0].quantity)
-                    ) || "",
+                    columns.findIndex(
+                      (col, idx) =>
+                        csvData[0][idx] === String(mappedData[0].quantity)
+                    ) !== -1
+                      ? `${columns[columns.findIndex((col, idx) => csvData[0][idx] === String(mappedData[0].quantity))]}:${columns.findIndex((col, idx) => csvData[0][idx] === String(mappedData[0].quantity))}`
+                      : "",
                 }
               : undefined
           }

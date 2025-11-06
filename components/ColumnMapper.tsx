@@ -1,16 +1,83 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Scale, Box } from "lucide-react";
 
 interface ColumnMapperProps {
   columns: string[];
-  onMap: (mapping: Record<string, string>, unit: "kg" | "m3") => void;
+  onMap: (mapping: Record<string, number>, unit: "kg" | "m3") => void;
   csvPreview?: string[][];
   onCancel?: () => void;
   initialMapping?: Record<string, string>;
   initialUnit?: "kg" | "m3";
 }
+
+// Intelligent column detection based on common patterns
+const detectColumn = (columns: string[], keywords: string[]): string => {
+  const lowerColumns = columns.map((col) => col.toLowerCase());
+
+  for (const keyword of keywords) {
+    const index = lowerColumns.findIndex((col) => col.includes(keyword.toLowerCase()));
+    if (index !== -1) {
+      return `${columns[index]}:${index}`;
+    }
+  }
+
+  return "";
+};
+
+const detectUnit = (columns: string[]): "kg" | "m3" => {
+  const lowerColumns = columns.map((col) => col.toLowerCase());
+
+  // Check for volume indicators
+  const hasVolume = lowerColumns.some((col) =>
+    col.includes("volumen") ||
+    col.includes("volume") ||
+    col.includes("m3") ||
+    col.includes("m³") ||
+    col.includes("grossvolume") ||
+    col.includes("netvolume")
+  );
+
+  // Check for mass/weight indicators
+  const hasMass = lowerColumns.some((col) =>
+    col.includes("masse") ||
+    col.includes("mass") ||
+    col.includes("weight") ||
+    col.includes("gewicht") ||
+    col.includes("kg")
+  );
+
+  // If we have volume indicators and no mass indicators, default to m3
+  if (hasVolume && !hasMass) {
+    return "m3";
+  }
+
+  // Default to kg
+  return "kg";
+};
+
+const getInitialMapping = (columns: string[], initialMapping?: Record<string, string>) => {
+  if (initialMapping) {
+    return initialMapping;
+  }
+
+  // Auto-detect columns based on common names
+  return {
+    element: detectColumn(columns, [
+      "element", "bauteil", "component", "teil", "name (1)", "name(1)",
+      "building element", "bauteile", "type name"
+    ]),
+    material: detectColumn(columns, [
+      "material", "name (2)", "name(2)", "werkstoff", "baustoff",
+      "construction material", "materialien"
+    ]),
+    quantity: detectColumn(columns, [
+      "quantity", "menge", "amount", "mass", "masse", "volumen", "volume",
+      "kg", "m3", "m³", "weight", "gewicht", "grossvolume", "netvolume"
+    ]),
+  };
+};
 
 export default function ColumnMapper({
   columns,
@@ -22,19 +89,25 @@ export default function ColumnMapper({
 }: ColumnMapperProps) {
   // Store column index along with name in the mapping
   const [mapping, setMapping] = useState<Record<string, string>>(
-    initialMapping || {
-      element: "",
-      material: "",
-      quantity: "",
-    }
+    getInitialMapping(columns, initialMapping)
   );
 
-  const [unit, setUnit] = useState<"kg" | "m3">(initialUnit);
+  // Auto-detect unit if not provided
+  const detectedUnit = React.useMemo(() => {
+    return initialUnit !== undefined ? initialUnit : detectUnit(columns);
+  }, [columns, initialUnit]);
+
+  const [unit, setUnit] = useState<"kg" | "m3">(detectedUnit);
 
   // Create display names for columns with duplicates
   const getDisplayName = (col: string, index: number) => {
     const count = columns.filter((c) => c === col).length;
-    return count > 1 ? `${col} (${index + 1})` : col;
+    if (count > 1) {
+      // Count how many times this column name appeared before this index
+      const occurrenceNumber = columns.slice(0, index + 1).filter((c) => c === col).length;
+      return `${col} (${occurrenceNumber})`;
+    }
+    return col;
   };
 
   return (
@@ -69,13 +142,12 @@ export default function ColumnMapper({
                     return (
                       <td
                         key={colIndex}
-                        className={`px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6] ${
-                          mapping.element === currentIdentifier ||
-                          mapping.material === currentIdentifier ||
-                          mapping.quantity === currentIdentifier
+                        className={`px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6] ${mapping.element === currentIdentifier ||
+                            mapping.material === currentIdentifier ||
+                            mapping.quantity === currentIdentifier
                             ? "bg-blue-50 dark:bg-[#24283b]"
                             : ""
-                        }`}
+                          }`}
                       >
                         {row[colIndex]}
                       </td>
@@ -91,11 +163,12 @@ export default function ColumnMapper({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          // Keep the index in the mapping - convert to numbers
           const cleanMapping = Object.fromEntries(
-            Object.entries(mapping).map(([key, value]) => [
-              key,
-              value.split(":")[0],
-            ])
+            Object.entries(mapping).map(([key, value]) => {
+              const [colName, colIndex] = value.split(":");
+              return [key, parseInt(colIndex)];
+            })
           );
           onMap(cleanMapping, unit);
         }}
@@ -147,11 +220,10 @@ export default function ColumnMapper({
             <button
               type="button"
               onClick={() => setUnit("kg")}
-              className={`flex items-center justify-center gap-3 p-4 rounded-lg border-2 transition-all ${
-                unit === "kg"
+              className={`flex items-center justify-center gap-3 p-4 rounded-lg border-2 transition-all ${unit === "kg"
                   ? "border-[#7aa2f7] bg-[#7aa2f7]/10 text-[#7aa2f7]"
                   : "border-gray-200 dark:border-[#24283b] hover:border-gray-300 dark:hover:border-[#414868] text-gray-700 dark:text-[#a9b1d6]"
-              }`}
+                }`}
             >
               <Scale
                 className={
@@ -171,11 +243,10 @@ export default function ColumnMapper({
             <button
               type="button"
               onClick={() => setUnit("m3")}
-              className={`flex items-center justify-center gap-3 p-4 rounded-lg border-2 transition-all ${
-                unit === "m3"
+              className={`flex items-center justify-center gap-3 p-4 rounded-lg border-2 transition-all ${unit === "m3"
                   ? "border-[#7aa2f7] bg-[#7aa2f7]/10 text-[#7aa2f7]"
                   : "border-gray-200 dark:border-[#24283b] hover:border-gray-300 dark:hover:border-[#414868] text-gray-700 dark:text-[#a9b1d6]"
-              }`}
+                }`}
             >
               <Box
                 className={

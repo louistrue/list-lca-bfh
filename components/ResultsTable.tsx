@@ -1,9 +1,52 @@
 "use client";
 
-import { useState, useMemo, Fragment } from "react";
-import MaterialDropdown from "./MaterialDropdown";
-import { Download, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
+import * as React from "react";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
+  getSortedRowModel,
+  getGroupedRowModel,
+  getExpandedRowModel,
+  flexRender,
+  type ColumnDef,
+  type FilterFn,
+  type SortingState,
+  type PaginationState,
+  type RowSelectionState,
+  type GroupingState,
+  type VisibilityState,
+} from "@tanstack/react-table";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ChevronRight,
+  ChevronDown,
+  Download,
+  Trash2,
+  Filter,
+  X,
+  ChevronFirst,
+  ChevronLast,
+  ChevronLeft,
+  ChevronRight as ChevronRightIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import MaterialSelect from "./MaterialSelect";
 import TotalsSummary from "./TotalsSummary";
+import { cn } from "@/lib/utils";
 
 interface MaterialOption {
   id: string;
@@ -11,6 +54,7 @@ interface MaterialOption {
   co2: number;
   ubp: number;
   kwh: number;
+  density?: number;
 }
 
 interface MaterialData {
@@ -36,15 +80,34 @@ interface ResultsTableProps {
   onDeleteRows?: (indices: number[]) => void;
 }
 
-interface GroupedData
-  extends Omit<MaterialData, "quantity" | "kg" | "co2" | "ubp" | "kwh"> {
-  quantity: number;
-  kg: number;
-  co2: number;
-  ubp: number;
-  kwh: number;
-  rows: number[];
-  isExpanded?: boolean;
+// Global filter function
+const globalFilterFn: FilterFn<MaterialData> = (row, columnId, value) => {
+  const search = value.toLowerCase();
+  const element = row.original.element?.toLowerCase() || "";
+  const material = row.original.material?.toLowerCase() || "";
+  const matchedMaterial = row.original.matchedMaterial?.toLowerCase() || "";
+  return (
+    element.includes(search) ||
+    material.includes(search) ||
+    matchedMaterial.includes(search)
+  );
+};
+
+// Debounce hook
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState<T>(value);
+
+  React.useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
 }
 
 export default function ResultsTable({
@@ -54,76 +117,515 @@ export default function ResultsTable({
   onUpdateMaterial,
   onDeleteRows,
 }: ResultsTableProps) {
-  const [selectedRows, setSelectedRows] = useState<number[]>([]);
-  const [bulkMaterial, setBulkMaterial] = useState<string>("");
-  const [isGrouped, setIsGrouped] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(
-    {}
+  const [sorting, setSorting] = React.useState<SortingState>([
+    { id: "element", desc: false },
+    { id: "material", desc: false },
+  ]);
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+  const [grouping, setGrouping] = React.useState<GroupingState>([]);
+  const [globalFilter, setGlobalFilter] = React.useState("");
+  const [columnFilters, setColumnFilters] = React.useState<
+    Array<{ id: string; value: unknown }>
+  >([]);
+  const [pagination, setPagination] = React.useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 25,
+  });
+
+  const debouncedGlobalFilter = useDebounce(globalFilter, 300);
+
+  // Column definitions
+  const columns = React.useMemo<ColumnDef<MaterialData>[]>(
+    () => [
+      {
+        id: "select",
+        header: ({ table }) => (
+          <input
+            type="checkbox"
+            checked={table.getIsAllPageRowsSelected()}
+            onChange={(e) => table.toggleAllPageRowsSelected(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
+          />
+        ),
+        cell: ({ row }) => {
+          const isGrouped = row.getIsGrouped();
+          
+          if (isGrouped) {
+            const groupRows = row.getLeafRows();
+            const allSelected = groupRows.every((r) => r.getIsSelected());
+            const someSelected = groupRows.some((r) => r.getIsSelected());
+            
+            return (
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) {
+                    el.indeterminate = someSelected && !allSelected;
+                  }
+                }}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  groupRows.forEach((r) => r.toggleSelected(e.target.checked));
+                }}
+                className="h-4 w-4 rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
+              />
+            );
+          }
+          
+          return (
+            <input
+              type="checkbox"
+              checked={row.getIsSelected()}
+              onChange={(e) => row.toggleSelected(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
+            />
+          );
+        },
+        enableGrouping: false,
+        enableSorting: false,
+        size: 50,
+      },
+      {
+        accessorKey: "element",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting()}
+            className="h-auto p-0 font-medium hover:bg-transparent"
+          >
+            Element
+            {column.getIsSorted() === "asc" ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === "desc" ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+            )}
+          </Button>
+        ),
+        cell: ({ row, table }) => {
+          const isGrouped = table.getState().grouping.length > 0;
+          const isGroupedRow = row.getIsGrouped();
+
+          if (isGroupedRow) {
+            return (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={row.getToggleExpandedHandler()}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-[#24283b] rounded"
+                >
+                  {row.getIsExpanded() ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </button>
+                <span className="font-medium">{row.getValue<string>("element")}</span>
+                <Badge variant="secondary" className="ml-2">
+                  {row.subRows.length} {row.subRows.length === 1 ? "Zeile" : "Zeilen"}
+                </Badge>
+              </div>
+            );
+          }
+
+          return <span>{row.getValue<string>("element")}</span>;
+        },
+        enableGrouping: true,
+      },
+      {
+        accessorKey: "material",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting()}
+            className="h-auto p-0 font-medium hover:bg-transparent"
+          >
+            Material
+            {column.getIsSorted() === "asc" ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === "desc" ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+            )}
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const isGrouped = row.getIsGrouped();
+          if (isGrouped) {
+            return <span className="font-medium">{row.getValue<string>("material")}</span>;
+          }
+          return <span>{row.getValue<string>("material")}</span>;
+        },
+        enableGrouping: true,
+      },
+      {
+        id: "matchedMaterial",
+        accessorKey: "matchedMaterial",
+        header: ({ column }) => (
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting()}
+            className="h-auto p-0 font-medium hover:bg-transparent"
+          >
+            Zugeordnetes Material
+            {column.getIsSorted() === "asc" ? (
+              <ArrowUp className="ml-2 h-4 w-4" />
+            ) : column.getIsSorted() === "desc" ? (
+              <ArrowDown className="ml-2 h-4 w-4" />
+            ) : (
+              <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+            )}
+          </Button>
+        ),
+        cell: ({ row }) => {
+          const isGrouped = row.getIsGrouped();
+          if (isGrouped) {
+            return <span className="font-medium">{row.getValue<string>("matchedMaterial")}</span>;
+          }
+
+          const rowData = row.original;
+          const rowIndex = parseInt(row.id);
+
+          return (
+            <MaterialSelect
+              materials={rowData.availableMaterials}
+              selectedMaterial={rowData.matchedMaterial}
+              onSelect={(material) => {
+                const selectedRows = table
+                  .getSelectedRowModel()
+                  .rows.map((r) => parseInt(r.id));
+                const indices = selectedRows.includes(rowIndex)
+                  ? selectedRows
+                  : [rowIndex];
+                onUpdateMaterial?.(indices, material);
+              }}
+              showDensity={rowData.unit === "m3"}
+            />
+          );
+        },
+        enableGrouping: true,
+      },
+      {
+        accessorKey: "quantity",
+        header: ({ column }) => (
+          <div className="text-right">
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting()}
+              className="h-auto p-0 font-medium hover:bg-transparent"
+            >
+              {data[0]?.unit === "m3" ? "Volumen (m³)" : "Masse (kg)"}
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              )}
+            </Button>
+          </div>
+        ),
+        cell: ({ row }) => {
+          const isGrouped = row.getIsGrouped();
+          const value = row.getValue<number>("quantity");
+          if (isGrouped) {
+            const leafRows = row.getLeafRows();
+            const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("quantity") || 0), 0);
+            return (
+              <div className="text-right font-medium">
+                {aggregated.toFixed(2)}
+              </div>
+            );
+          }
+          return <div className="text-right">{value.toFixed(2)}</div>;
+        },
+        aggregationFn: (columnId, leafRows) => {
+          return leafRows.reduce((sum, row) => {
+            const value = row.getValue<number>(columnId);
+            return sum + (typeof value === 'number' ? value : 0);
+          }, 0);
+        },
+      },
+      ...(data[0]?.unit === "m3"
+        ? [
+            {
+              accessorKey: "density" as const,
+              header: () => (
+                <div className="text-right">Dichte (kg/m³)</div>
+              ),
+              cell: ({ row }: { row: any }) => {
+                const value = row.original.density;
+                return (
+                  <div className="text-right">
+                    {value ? value.toFixed(2) : "N/A"}
+                  </div>
+                );
+              },
+              enableGrouping: false,
+              enableSorting: false,
+            } as ColumnDef<MaterialData>,
+            {
+              accessorKey: "kg" as const,
+              header: ({ column }) => (
+                <div className="text-right">
+                  <Button
+                    variant="ghost"
+                    onClick={() => column.toggleSorting()}
+                    className="h-auto p-0 font-medium hover:bg-transparent"
+                  >
+                    Masse (kg)
+                    {column.getIsSorted() === "asc" ? (
+                      <ArrowUp className="ml-2 h-4 w-4" />
+                    ) : column.getIsSorted() === "desc" ? (
+                      <ArrowDown className="ml-2 h-4 w-4" />
+                    ) : (
+                      <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    )}
+                  </Button>
+                </div>
+              ),
+              cell: ({ row }) => {
+                const isGrouped = row.getIsGrouped();
+                const value = row.getValue<number>("kg");
+                if (isGrouped) {
+                  const leafRows = row.getLeafRows();
+                  const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("kg") || 0), 0);
+                  return (
+                    <div className="text-right font-medium">
+                      {aggregated.toFixed(2)}
+                    </div>
+                  );
+                }
+                return <div className="text-right">{value.toFixed(2)}</div>;
+              },
+              aggregationFn: (columnId, leafRows) => {
+                return leafRows.reduce((sum, row) => {
+                  const value = row.getValue<number>(columnId);
+                  return sum + (typeof value === 'number' ? value : 0);
+                }, 0);
+              },
+            } as ColumnDef<MaterialData>,
+          ]
+        : []),
+      {
+        accessorKey: "co2",
+        header: ({ column }) => (
+          <div className="text-right">
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting()}
+              className="h-auto p-0 font-medium hover:bg-transparent"
+            >
+              CO₂ (kg CO₂ eq)
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              )}
+            </Button>
+          </div>
+        ),
+        cell: ({ row }) => {
+          const isGrouped = row.getIsGrouped();
+          const value = row.getValue<number>("co2");
+          if (isGrouped) {
+            const leafRows = row.getLeafRows();
+            const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("co2") || 0), 0);
+            return (
+              <div className="text-right font-medium">
+                {aggregated.toFixed(2)}
+              </div>
+            );
+          }
+          return <div className="text-right">{value.toFixed(2)}</div>;
+        },
+        aggregationFn: (columnId, leafRows) => {
+          return leafRows.reduce((sum, row) => {
+            const value = row.getValue<number>(columnId);
+            return sum + (typeof value === 'number' ? value : 0);
+          }, 0);
+        },
+      },
+      {
+        accessorKey: "ubp",
+        header: ({ column }) => (
+          <div className="text-right">
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting()}
+              className="h-auto p-0 font-medium hover:bg-transparent"
+            >
+              UBP (Pkt)
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              )}
+            </Button>
+          </div>
+        ),
+        cell: ({ row }) => {
+          const isGrouped = row.getIsGrouped();
+          const value = row.getValue<number>("ubp");
+          if (isGrouped) {
+            const leafRows = row.getLeafRows();
+            const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("ubp") || 0), 0);
+            return (
+              <div className="text-right font-medium">
+                {aggregated.toFixed(2)}
+              </div>
+            );
+          }
+          return <div className="text-right">{value.toFixed(2)}</div>;
+        },
+        aggregationFn: (columnId, leafRows) => {
+          return leafRows.reduce((sum, row) => {
+            const value = row.getValue<number>(columnId);
+            return sum + (typeof value === 'number' ? value : 0);
+          }, 0);
+        },
+      },
+      {
+        accessorKey: "kwh",
+        header: ({ column }) => (
+          <div className="text-right">
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting()}
+              className="h-auto p-0 font-medium hover:bg-transparent"
+            >
+              Energie (kWh)
+              {column.getIsSorted() === "asc" ? (
+                <ArrowUp className="ml-2 h-4 w-4" />
+              ) : column.getIsSorted() === "desc" ? (
+                <ArrowDown className="ml-2 h-4 w-4" />
+              ) : (
+                <ArrowUpDown className="ml-2 h-4 w-4 opacity-50" />
+              )}
+            </Button>
+          </div>
+        ),
+        cell: ({ row }) => {
+          const isGrouped = row.getIsGrouped();
+          const value = row.getValue<number>("kwh");
+          if (isGrouped) {
+            const leafRows = row.getLeafRows();
+            const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("kwh") || 0), 0);
+            return (
+              <div className="text-right font-medium">
+                {aggregated.toFixed(2)}
+              </div>
+            );
+          }
+          return <div className="text-right">{value.toFixed(2)}</div>;
+        },
+        aggregationFn: (columnId, leafRows) => {
+          return leafRows.reduce((sum, row) => {
+            const value = row.getValue<number>(columnId);
+            return sum + (typeof value === 'number' ? value : 0);
+          }, 0);
+        },
+      },
+    ],
+    [data]
   );
 
-  // Group data by element and material
-  const groupedData = useMemo(() => {
-    if (!isGrouped) return null;
+  const table = useReactTable({
+    data,
+    columns,
+    state: {
+      sorting,
+      rowSelection,
+      grouping,
+      globalFilter: debouncedGlobalFilter,
+      columnFilters,
+      pagination,
+    },
+    onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    onGroupingChange: setGrouping,
+    onGlobalFilterChange: setGlobalFilter,
+    onColumnFiltersChange: setColumnFilters,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getGroupedRowModel: getGroupedRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
+    globalFilterFn,
+    enableRowSelection: true,
+    enableGrouping: true,
+    getRowId: (row, index) => `${index}`,
+    initialState: {
+      grouping: [],
+    },
+  });
 
-    const groups: Record<string, GroupedData> = {};
+  // Calculate totals from filtered data
+  const totals = React.useMemo(() => {
+    const filteredData = table.getFilteredRowModel().rows.map((row) => row.original);
+    return {
+      totalMass: filteredData.reduce((sum, row) => sum + row.kg, 0),
+      totalCO2: filteredData.reduce((sum, row) => sum + row.co2, 0),
+      totalUBP: filteredData.reduce((sum, row) => sum + row.ubp, 0),
+      totalEnergy: filteredData.reduce((sum, row) => sum + row.kwh, 0),
+      itemCount: filteredData.length,
+    };
+  }, [table, data, debouncedGlobalFilter, grouping, sorting, pagination]);
 
-    data.forEach((row, index) => {
-      const key = `${row.element}|${row.material}`;
+  // Virtual scrolling setup - only use when not grouped for simplicity
+  const tableContainerRef = React.useRef<HTMLDivElement>(null);
+  const { rows } = table.getRowModel();
+  const isGrouped = grouping.length > 0;
 
-      if (!groups[key]) {
-        groups[key] = {
-          ...row,
-          quantity: row.quantity,
-          kg: row.kg,
-          co2: row.co2,
-          ubp: row.ubp,
-          kwh: row.kwh,
-          rows: [index],
-          isExpanded: expandedGroups[key],
-        };
-      } else {
-        groups[key].quantity += row.quantity;
-        groups[key].kg += row.kg;
-        groups[key].co2 += row.co2;
-        groups[key].ubp += row.ubp;
-        groups[key].kwh += row.kwh;
-        groups[key].rows.push(index);
-      }
-    });
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 50,
+    overscan: 10,
+    enabled: !isGrouped && pagination.pageSize !== rows.length, // Disable when grouped or showing all
+  });
 
-    return Object.values(groups);
-  }, [data, isGrouped, expandedGroups]);
+  // Selected rows
+  const selectedRows = table.getSelectedRowModel().rows;
+  const selectedIndices = selectedRows.map((row) => parseInt(row.id));
 
-  const handleGroupToggle = (key: string) => {
-    setExpandedGroups((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
+  // Available materials for bulk update
+  const availableMaterials =
+    data[0]?.availableMaterials || selectedRows[0]?.original.availableMaterials || [];
 
-  const handleRowSelect = (index: number, isChecked: boolean) => {
-    setSelectedRows((prev) =>
-      isChecked ? [...prev, index] : prev.filter((i) => i !== index)
-    );
-  };
-
-  const handleSelectAll = (isChecked: boolean) => {
-    setSelectedRows(isChecked ? data.map((_, index) => index) : []);
-  };
-
+  // Handle bulk material update
   const handleBulkUpdate = (material: MaterialOption) => {
-    if (selectedRows.length > 0 && onUpdateMaterial) {
-      onUpdateMaterial(selectedRows, material);
-      setSelectedRows([]); // Clear selection after update
-      setBulkMaterial(""); // Reset bulk material dropdown
+    if (selectedIndices.length > 0 && onUpdateMaterial) {
+      onUpdateMaterial(selectedIndices, material);
+      table.resetRowSelection();
     }
   };
 
-  // Get available materials from the first row (they should all be the same)
-  const availableMaterials = data[0]?.availableMaterials || [];
+  // Handle delete
+  const handleDelete = React.useCallback(() => {
+    if (selectedIndices.length === 0 || !onDeleteRows) return;
 
+    const confirmMessage =
+      selectedIndices.length === 1
+        ? "Möchten Sie diese Zeile wirklich löschen?"
+        : `Möchten Sie diese ${selectedIndices.length} Zeilen wirklich löschen?`;
+
+    if (window.confirm(confirmMessage)) {
+      onDeleteRows(selectedIndices);
+      table.resetRowSelection();
+    }
+  }, [selectedIndices, onDeleteRows, table]);
+
+  // Export CSV
   const handleExportCSV = () => {
-    // Helper function to escape CSV values
     const escapeCSV = (value: string | number) => {
       const stringValue = String(value);
       if (
@@ -131,19 +633,17 @@ export default function ResultsTable({
         stringValue.includes('"') ||
         stringValue.includes("'")
       ) {
-        // Escape quotes by doubling them and wrap in quotes
         return `"${stringValue.replace(/"/g, '""')}"`;
       }
       return stringValue;
     };
 
-    // Determine which rows to export
     const rowsToExport =
-      selectedRows.length > 0 ? selectedRows : data.map((_, index) => index);
+      selectedIndices.length > 0
+        ? selectedIndices
+        : table.getFilteredRowModel().rows.map((row) => parseInt(row.id));
 
-    // Create CSV content
     const csvContent = [
-      // Headers: Original headers + new result columns
       [
         ...originalHeaders,
         "Matched Material",
@@ -153,11 +653,9 @@ export default function ResultsTable({
       ]
         .map(escapeCSV)
         .join(","),
-
-      // Rows: Combine original data with results
       ...rowsToExport.map((index) => {
         const originalData = originalHeaders.map((header) => {
-          const value = originalRowData[index][header] || "";
+          const value = originalRowData[index]?.[header] || "";
           return escapeCSV(value);
         });
 
@@ -172,16 +670,15 @@ export default function ResultsTable({
       }),
     ].join("\n");
 
-    // Create and trigger download with BOM for Excel compatibility
-    const BOM = "\uFEFF"; // Add BOM for proper UTF-8 encoding in Excel
+    const BOM = "\uFEFF";
     const blob = new Blob([BOM + csvContent], {
       type: "text/csv;charset=utf-8;",
     });
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     const filename =
-      selectedRows.length > 0
-        ? `lca-results-${selectedRows.length}-selected-${
+      selectedIndices.length > 0
+        ? `lca-results-${selectedIndices.length}-selected-${
             new Date().toISOString().split("T")[0]
           }.csv`
         : `lca-results-all-${new Date().toISOString().split("T")[0]}.csv`;
@@ -194,345 +691,298 @@ export default function ResultsTable({
     URL.revokeObjectURL(url);
   };
 
-  // Calculate totals
-  const totals = {
-    totalMass: data.reduce((sum, row) => sum + row.kg, 0),
-    totalCO2: data.reduce((sum, row) => sum + row.co2, 0),
-    totalUBP: data.reduce((sum, row) => sum + row.ubp, 0),
-    totalEnergy: data.reduce((sum, row) => sum + row.kwh, 0),
-    itemCount: data.length,
-  };
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Delete" && selectedIndices.length > 0) {
+        handleDelete();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        table.toggleAllRowsSelected();
+      }
+    };
 
-  const handleDelete = () => {
-    if (!selectedRows.length || !onDeleteRows) return;
-
-    const confirmMessage =
-      selectedRows.length === 1
-        ? "Möchten Sie diese Zeile wirklich löschen?"
-        : `Möchten Sie diese ${selectedRows.length} Zeilen wirklich löschen?`;
-
-    if (window.confirm(confirmMessage)) {
-      onDeleteRows(selectedRows);
-      setSelectedRows([]);
-    }
-  };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIndices.length, table, handleDelete]);
 
   return (
     <div className="w-full space-y-6">
       <TotalsSummary data={totals} />
 
+      {/* Toolbar */}
       <div className="flex flex-wrap justify-between items-center gap-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <button
-            onClick={() => setIsGrouped(!isGrouped)}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-[#a9b1d6] bg-white dark:bg-[#1a1b26] border border-gray-300 dark:border-[#24283b] rounded-lg hover:bg-gray-50 dark:hover:bg-[#24283b] transition-colors"
-          >
-            {isGrouped ? "Gruppierung aufheben" : "Ähnliche Zeilen gruppieren"}
-          </button>
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              checked={selectedRows.length === data.length}
-              onChange={(e) => handleSelectAll(e.target.checked)}
-              className="h-4 w-4 text-[#7aa2f7] dark:text-[#7aa2f7] rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
+        <div className="flex flex-wrap items-center gap-4 flex-1">
+          {/* Global Search */}
+          <div className="relative flex-1 min-w-[200px] max-w-md">
+            <Filter className="absolute left-3 top-2.5 h-4 w-4 text-gray-400 dark:text-[#565f89]" />
+            <Input
+              placeholder="Global suchen..."
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              className="pl-9"
             />
-            <span className="ml-2 text-sm text-gray-600 dark:text-[#a9b1d6]">
-              {selectedRows.length} Zeilen ausgewählt
-            </span>
+            {globalFilter && (
+              <button
+                onClick={() => setGlobalFilter("")}
+                className="absolute right-2 top-2.5 h-4 w-4 text-gray-400 hover:text-gray-600 dark:hover:text-[#a9b1d6]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          {selectedRows.length > 0 && (
-            <div className="flex-1 max-w-md">
-              <MaterialDropdown
-                materials={availableMaterials}
-                selectedMaterial={bulkMaterial}
-                onSelect={(material) => {
-                  setBulkMaterial(material.name);
-                  handleBulkUpdate(material);
-                }}
-                placeholder="Ausgewählte Zeilen aktualisieren..."
-              />
-            </div>
+          {/* Grouping Selector */}
+          <Select
+            value={grouping.length > 0 ? grouping[0] : "none"}
+            onValueChange={(value) => {
+              if (value === "none") {
+                setGrouping([]);
+              } else {
+                setGrouping([value]);
+              }
+            }}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Gruppierung" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Keine Gruppierung</SelectItem>
+              <SelectItem value="element">Nach Element</SelectItem>
+              <SelectItem value="material">Nach Material</SelectItem>
+              <SelectItem value="matchedMaterial">Nach Zugeordnetes Material</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Selection info */}
+          {selectedIndices.length > 0 && (
+            <Badge variant="secondary" className="ml-2">
+              {selectedIndices.length} ausgewählt
+            </Badge>
           )}
         </div>
 
         <div className="flex items-center gap-3">
-          {selectedRows.length > 0 && (
-            <button
-              onClick={handleDelete}
-              className="flex items-center gap-2 px-4 py-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-              Löschen{" "}
-              {selectedRows.length > 1
-                ? `${selectedRows.length} Zeilen`
-                : "Zeile"}
-            </button>
+          {/* Bulk Material Update */}
+          {selectedIndices.length > 0 && (
+            <div className="w-[250px]">
+              <MaterialSelect
+                materials={availableMaterials}
+                selectedMaterial=""
+                onSelect={handleBulkUpdate}
+                placeholder="Ausgewählte aktualisieren..."
+              />
+            </div>
           )}
 
-          <button
+          {/* Delete Button */}
+          {selectedIndices.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Löschen ({selectedIndices.length})
+            </Button>
+          )}
+
+          {/* Export Button */}
+          <Button
             onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
           >
             <Download className="w-4 h-4" />
-            {selectedRows.length > 0
-              ? `${selectedRows.length} Ausgewählte exportieren`
-              : "Alle Ergebnisse exportieren"}
-          </button>
+            {selectedIndices.length > 0
+              ? `${selectedIndices.length} Exportieren`
+              : "Alle exportieren"}
+          </Button>
         </div>
       </div>
 
-      <div className="w-full overflow-x-auto rounded-lg border border-gray-200 dark:border-[#24283b] bg-white dark:bg-[#1a1b26] shadow-sm">
-        <table className="w-full divide-y divide-gray-200 dark:divide-[#24283b]">
-          <thead className="bg-gray-50 dark:bg-[#24283b]">
-            <tr>
-              <th className="w-12 px-4 py-3">
-                <input
-                  type="checkbox"
-                  checked={selectedRows.length === data.length}
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  className="h-4 w-4 text-[#7aa2f7] dark:text-[#7aa2f7] rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
-                />
+      {/* Table */}
+      <div className="rounded-lg border border-gray-200 dark:border-[#24283b] bg-white dark:bg-[#1a1b26] shadow-sm">
+        <div
+          ref={tableContainerRef}
+          className="overflow-auto"
+          style={{ height: "600px" }}
+        >
+          <table className="w-full border-collapse">
+            <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-[#24283b]">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <tr key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <th
+                      key={header.id}
+                      className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6] border-b border-gray-200 dark:border-[#24283b]"
+                      style={{
+                        width: header.getSize() !== 150 ? header.getSize() : undefined,
+                      }}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
               </th>
-              {isGrouped && <th className="w-8 px-2 py-3"></th>}
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                Element
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                Material
-              </th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                Zugeordnetes Material
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                {data[0]?.unit === "m3" ? "Volumen (m³)" : "Masse (kg)"}
-              </th>
-              {data[0]?.unit === "m3" && (
-                <>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                    Dichte (kg/m³)
-                  </th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                    Masse (kg)
-                  </th>
-                </>
-              )}
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                CO₂ (kg CO₂ eq)
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                UBP (Pkt)
-              </th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 dark:text-[#a9b1d6]">
-                Energie (kWh)
-              </th>
+                  ))}
             </tr>
+              ))}
           </thead>
-          <tbody className="bg-white dark:bg-[#1a1b26] divide-y divide-gray-200 dark:divide-[#24283b]">
-            {isGrouped && groupedData
-              ? groupedData.map((group) => {
-                  const key = `${group.element}|${group.material}`;
+            <tbody className="bg-white dark:bg-[#1a1b26]">
+              {rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    className="px-4 py-8 text-center text-gray-500 dark:text-[#565f89]"
+                  >
+                    {debouncedGlobalFilter
+                      ? "Keine Ergebnisse gefunden"
+                      : "Keine Daten verfügbar"}
+                  </td>
+                </tr>
+              ) : rowVirtualizer.getVirtualItems().length > 0 && !isGrouped ? (
+                // Virtualized rendering for non-grouped tables
+                rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const row = rows[virtualRow.index];
                   return (
-                    <Fragment key={key}>
-                      <tr className="hover:bg-gray-50 dark:hover:bg-[#292e42]">
-                        <td className="px-4 py-2">
-                          <input
-                            type="checkbox"
-                            checked={group.rows.every((i) =>
-                              selectedRows.includes(i)
-                            )}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedRows((prev) => [
-                                  ...prev,
-                                  ...group.rows,
-                                ]);
-                              } else {
-                                setSelectedRows((prev) =>
-                                  prev.filter((i) => !group.rows.includes(i))
-                                );
-                              }
-                            }}
-                            className="h-4 w-4 text-[#7aa2f7] dark:text-[#7aa2f7] rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
-                          />
+                    <tr
+                      key={row.id}
+                      className={cn(
+                        "border-b border-gray-200 dark:border-[#24283b]",
+                        row.getIsSelected() &&
+                          "bg-blue-50 dark:bg-[#24283b]",
+                        "hover:bg-gray-50 dark:hover:bg-[#292e42]"
+                      )}
+                      style={{
+                        height: `${virtualRow.size}px`,
+                        transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
+                      }}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <td
+                          key={cell.id}
+                          className="px-4 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
                         </td>
-                        <td className="px-2 py-2">
-                          <button
-                            onClick={() => handleGroupToggle(key)}
-                            className="p-1 hover:bg-gray-100 rounded"
-                          >
-                            {expandedGroups[key] ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
-                          </button>
-                        </td>
-                        <td className="px-4 py-2 text-gray-900 dark:text-[#a9b1d6]">
-                          {group.element}
-                        </td>
-                        <td className="px-4 py-2 text-gray-900 dark:text-[#a9b1d6]">
-                          {group.material}
-                        </td>
-                        <td className="px-4 py-2">
-                          <MaterialDropdown
-                            materials={group.availableMaterials}
-                            selectedMaterial={group.matchedMaterial}
-                            onSelect={(material) =>
-                              onUpdateMaterial?.(group.rows, material)
-                            }
-                            showDensity={group.unit === "m3"}
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-[#a9b1d6]">
-                          {group.quantity.toFixed(2)}
-                        </td>
-                        {group.unit === "m3" && (
-                          <>
-                            <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                              {group.density?.toFixed(2) || "N/A"}
-                            </td>
-                            <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-[#a9b1d6]">
-                              {group.kg.toFixed(2)}
-                            </td>
-                          </>
-                        )}
-                        <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-[#a9b1d6]">
-                          {group.co2.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-[#a9b1d6]">
-                          {group.ubp.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-[#a9b1d6]">
-                          {group.kwh.toFixed(2)}
-                        </td>
-                      </tr>
-                      {expandedGroups[key] &&
-                        group.rows.map((index) => (
-                          <tr
-                            key={`${key}-${index}`}
-                            className="bg-gray-50 dark:bg-[#292e42]"
-                          >
-                            <td className="px-4 py-2">
-                              <input
-                                type="checkbox"
-                                checked={selectedRows.includes(index)}
-                                onChange={(e) =>
-                                  handleRowSelect(index, e.target.checked)
-                                }
-                                className="h-4 w-4 text-[#7aa2f7] dark:text-[#7aa2f7] rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
-                              />
-                            </td>
-                            <td className="px-2 py-2"></td>
-                            <td className="px-4 py-2 text-gray-900 dark:text-[#a9b1d6]">
-                              {data[index].element}
-                            </td>
-                            <td className="px-4 py-2 text-gray-900 dark:text-[#a9b1d6]">
-                              {data[index].material}
-                            </td>
-                            <td className="px-4 py-2">
-                              <MaterialDropdown
-                                materials={data[index].availableMaterials}
-                                selectedMaterial={data[index].matchedMaterial}
-                                onSelect={(material) =>
-                                  onUpdateMaterial?.([index], material)
-                                }
-                                showDensity={data[index].unit === "m3"}
-                              />
-                            </td>
-                            <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                              {data[index].quantity.toFixed(2)}
-                            </td>
-                            {data[index].unit === "m3" && (
-                              <>
-                                <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                                  {data[index].density?.toFixed(2) || "N/A"}
-                                </td>
-                                <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                                  {data[index].kg.toFixed(2)}
-                                </td>
-                              </>
-                            )}
-                            <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                              {data[index].co2.toFixed(2)}
-                            </td>
-                            <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                              {data[index].ubp.toFixed(2)}
-                            </td>
-                            <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                              {data[index].kwh.toFixed(2)}
-                            </td>
+                      ))}
                           </tr>
-                        ))}
-                    </Fragment>
                   );
                 })
-              : // Original row rendering
-                data.map((row, index) => (
+              ) : (
+                // Regular rendering for grouped tables or when virtualization is disabled
+                rows.map((row) => (
                   <tr
-                    key={index}
-                    className={`
-                      ${
-                        selectedRows.includes(index)
-                          ? "bg-blue-50 dark:bg-[#24283b]"
-                          : ""
-                      }
-                      hover:bg-gray-50 dark:hover:bg-[#292e42]
-                    `}
-                  >
-                    <td className="px-4 py-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedRows.includes(index)}
-                        onChange={(e) =>
-                          handleRowSelect(index, e.target.checked)
-                        }
-                        className="h-4 w-4 text-[#7aa2f7] dark:text-[#7aa2f7] rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-gray-900 dark:text-[#a9b1d6]">
-                      {row.element}
-                    </td>
-                    <td className="px-4 py-2 text-gray-900 dark:text-[#a9b1d6]">
-                      {row.material}
-                    </td>
-                    <td className="px-4 py-2">
-                      <MaterialDropdown
-                        materials={row.availableMaterials}
-                        selectedMaterial={row.matchedMaterial}
-                        onSelect={(material) =>
-                          onUpdateMaterial?.([index], material)
-                        }
-                        showDensity={row.unit === "m3"}
-                      />
-                    </td>
-                    <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                      {row.quantity.toFixed(2)}
-                    </td>
-                    {row.unit === "m3" && (
-                      <>
-                        <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                          {row.density?.toFixed(2) || "N/A"}
-                        </td>
-                        <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                          {row.kg.toFixed(2)}
-                        </td>
-                      </>
+                    key={row.id}
+                    className={cn(
+                      "border-b border-gray-200 dark:border-[#24283b]",
+                      row.getIsSelected() &&
+                        "bg-blue-50 dark:bg-[#24283b]",
+                      "hover:bg-gray-50 dark:hover:bg-[#292e42]",
+                      row.getIsGrouped() && "bg-gray-50 dark:bg-[#24283b]"
                     )}
-                    <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                      {row.co2.toFixed(2)}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td
+                        key={cell.id}
+                        className="px-4 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
                     </td>
-                    <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                      {row.ubp.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-2 text-right text-gray-900 dark:text-[#a9b1d6]">
-                      {row.kwh.toFixed(2)}
-                    </td>
+                    ))}
                   </tr>
-                ))}
+                ))
+              )}
           </tbody>
         </table>
+        </div>
+
+        {/* Pagination */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 dark:border-[#24283b]">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600 dark:text-[#a9b1d6]">
+              Zeige{" "}
+              {table.getState().pagination.pageIndex *
+                table.getState().pagination.pageSize +
+                1}{" "}
+              bis{" "}
+              {Math.min(
+                (table.getState().pagination.pageIndex + 1) *
+                  table.getState().pagination.pageSize,
+                table.getFilteredRowModel().rows.length
+              )}{" "}
+              von {table.getFilteredRowModel().rows.length} Zeilen
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Select
+              value={String(pagination.pageSize)}
+              onValueChange={(value) => {
+                table.setPageSize(
+                  value === "all" ? table.getFilteredRowModel().rows.length : Number(value)
+                );
+              }}
+            >
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10 pro Seite</SelectItem>
+                <SelectItem value="25">25 pro Seite</SelectItem>
+                <SelectItem value="50">50 pro Seite</SelectItem>
+                <SelectItem value="100">100 pro Seite</SelectItem>
+                <SelectItem value="all">Alle</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => table.setPageIndex(0)}
+                disabled={!table.getCanPreviousPage()}
+              >
+                <ChevronFirst className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                <ChevronRightIcon className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() =>
+                  table.setPageIndex(table.getPageCount() - 1)
+                }
+                disabled={!table.getCanNextPage()}
+              >
+                <ChevronLast className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
