@@ -110,6 +110,20 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+// Format number with Swiss locale (apostrophes as thousands separator, 2 decimal places)
+function formatNumber(value: number | null | undefined): string {
+  if (value === null || value === undefined || isNaN(value)) {
+    return "N/A";
+  }
+  // Round to 2 decimal places
+  const rounded = Math.round(value * 100) / 100;
+  // Format with Swiss locale (de-CH) which uses apostrophes as thousands separator
+  return rounded.toLocaleString("de-CH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 // Component that only shows title if text is truncated
 function TruncatedText({
   children,
@@ -409,11 +423,11 @@ export default function ResultsTable({
             const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("quantity") || 0), 0);
             return (
               <div className="text-right font-medium">
-                {aggregated.toFixed(2)}
+                {formatNumber(aggregated)}
               </div>
             );
           }
-          return <div className="text-right">{value.toFixed(2)}</div>;
+          return <div className="text-right">{formatNumber(value)}</div>;
         },
         aggregationFn: (columnId, leafRows) => {
           return leafRows.reduce((sum, row) => {
@@ -433,7 +447,7 @@ export default function ResultsTable({
               const value = row.original.density;
               return (
                 <div className="text-right">
-                  {value ? value.toFixed(2) : "N/A"}
+                  {formatNumber(value)}
                 </div>
               );
             },
@@ -474,11 +488,11 @@ export default function ResultsTable({
                 const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("kg") || 0), 0);
                 return (
                   <div className="text-right font-medium">
-                    {aggregated.toFixed(2)}
+                    {formatNumber(aggregated)}
                   </div>
                 );
               }
-              return <div className="text-right">{value.toFixed(2)}</div>;
+              return <div className="text-right">{formatNumber(value)}</div>;
             },
             aggregationFn: (columnId, leafRows) => {
               return leafRows.reduce((sum, row) => {
@@ -520,11 +534,11 @@ export default function ResultsTable({
             const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("co2") || 0), 0);
             return (
               <div className="text-right font-medium">
-                {aggregated.toFixed(2)}
+                {formatNumber(aggregated)}
               </div>
             );
           }
-          return <div className="text-right">{value.toFixed(2)}</div>;
+          return <div className="text-right">{formatNumber(value)}</div>;
         },
         aggregationFn: (columnId, leafRows) => {
           return leafRows.reduce((sum, row) => {
@@ -564,11 +578,11 @@ export default function ResultsTable({
             const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("ubp") || 0), 0);
             return (
               <div className="text-right font-medium">
-                {aggregated.toFixed(2)}
+                {formatNumber(aggregated)}
               </div>
             );
           }
-          return <div className="text-right">{value.toFixed(2)}</div>;
+          return <div className="text-right">{formatNumber(value)}</div>;
         },
         aggregationFn: (columnId, leafRows) => {
           return leafRows.reduce((sum, row) => {
@@ -608,11 +622,11 @@ export default function ResultsTable({
             const aggregated = leafRows.reduce((sum, r) => sum + (r.getValue<number>("kwh") || 0), 0);
             return (
               <div className="text-right font-medium">
-                {aggregated.toFixed(2)}
+                {formatNumber(aggregated)}
               </div>
             );
           }
-          return <div className="text-right">{value.toFixed(2)}</div>;
+          return <div className="text-right">{formatNumber(value)}</div>;
         },
         aggregationFn: (columnId, leafRows) => {
           return leafRows.reduce((sum, row) => {
@@ -750,9 +764,9 @@ export default function ResultsTable({
 
         const resultData = [
           data[index].matchedMaterial,
-          data[index].co2.toFixed(2),
-          data[index].ubp.toFixed(2),
-          data[index].kwh.toFixed(2),
+          formatNumber(data[index].co2),
+          formatNumber(data[index].ubp),
+          formatNumber(data[index].kwh),
         ].map(escapeCSV);
 
         return [...originalData, ...resultData].join(",");
