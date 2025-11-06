@@ -143,10 +143,10 @@ export default function ColumnMapper({
                       <td
                         key={colIndex}
                         className={`px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6] ${mapping.element === currentIdentifier ||
-                            mapping.material === currentIdentifier ||
-                            mapping.quantity === currentIdentifier
-                            ? "bg-blue-50 dark:bg-[#24283b]"
-                            : ""
+                          mapping.material === currentIdentifier ||
+                          mapping.quantity === currentIdentifier
+                          ? "bg-blue-50 dark:bg-[#24283b]"
+                          : ""
                           }`}
                       >
                         {row[colIndex]}
@@ -221,8 +221,8 @@ export default function ColumnMapper({
               type="button"
               onClick={() => setUnit("kg")}
               className={`flex items-center justify-center gap-3 p-4 rounded-lg border-2 transition-all ${unit === "kg"
-                  ? "border-[#7aa2f7] bg-[#7aa2f7]/10 text-[#7aa2f7]"
-                  : "border-gray-200 dark:border-[#24283b] hover:border-gray-300 dark:hover:border-[#414868] text-gray-700 dark:text-[#a9b1d6]"
+                ? "border-[#7aa2f7] bg-[#7aa2f7]/10 text-[#7aa2f7]"
+                : "border-gray-200 dark:border-[#24283b] hover:border-gray-300 dark:hover:border-[#414868] text-gray-700 dark:text-[#a9b1d6]"
                 }`}
             >
               <Scale
@@ -244,8 +244,8 @@ export default function ColumnMapper({
               type="button"
               onClick={() => setUnit("m3")}
               className={`flex items-center justify-center gap-3 p-4 rounded-lg border-2 transition-all ${unit === "m3"
-                  ? "border-[#7aa2f7] bg-[#7aa2f7]/10 text-[#7aa2f7]"
-                  : "border-gray-200 dark:border-[#24283b] hover:border-gray-300 dark:hover:border-[#414868] text-gray-700 dark:text-[#a9b1d6]"
+                ? "border-[#7aa2f7] bg-[#7aa2f7]/10 text-[#7aa2f7]"
+                : "border-gray-200 dark:border-[#24283b] hover:border-gray-300 dark:hover:border-[#414868] text-gray-700 dark:text-[#a9b1d6]"
                 }`}
             >
               <Box
