@@ -1,6 +1,7 @@
 "use client";
 
 import { Scale, Leaf, Zap, Building2 } from "lucide-react";
+import { formatMassWithUnit } from "@/lib/utils";
 
 interface TotalsSummaryProps {
   data: {
@@ -13,12 +14,12 @@ interface TotalsSummaryProps {
 }
 
 export default function TotalsSummary({ data }: TotalsSummaryProps) {
+  const massFormatted = formatMassWithUnit(data.totalMass);
+  
   const metrics = [
     {
       label: "Total Mass",
-      value: `${data.totalMass.toLocaleString("de-CH", {
-        maximumFractionDigits: 0,
-      })} kg`,
+      value: `${massFormatted.value} ${massFormatted.unit}`,
       icon: Scale,
       description: `From ${data.itemCount} items`,
     },

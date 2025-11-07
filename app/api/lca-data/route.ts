@@ -19,6 +19,24 @@ interface Material {
   primaryEnergyNonRenewableTotal: number | null;
 }
 
+// Helper function to parse density (could be a single value or range like "20-50")
+function parseDensity(densityStr: string): { value: number; min: number; max: number } {
+  if (!densityStr) return { value: 0, min: 0, max: 0 };
+  
+  // Check if it's a range (e.g., "20-50", "20 - 50", "20–50")
+  const rangeMatch = densityStr.match(/(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)/);
+  
+  if (rangeMatch) {
+    const min = parseFloat(rangeMatch[1]);
+    const max = parseFloat(rangeMatch[2]);
+    return { value: min, min, max }; // Default to minimum value
+  }
+  
+  // Single value
+  const value = parseFloat(densityStr) || 0;
+  return { value, min: value, max: value };
+}
+
 export async function POST(req: Request) {
   try {
     const data = await req.json();
@@ -135,17 +153,18 @@ export async function POST(req: Request) {
 
       // Calculate kg based on density if unit is m3
       let kg = item.quantity;
+      const densityInfo = matchedMaterial ? parseDensity(matchedMaterial.density) : { value: 0, min: 0, max: 0 };
+      
       if (item.unit === "m3" && matchedMaterial) {
-        const density = parseFloat(matchedMaterial.density || "0");
-        kg = item.quantity * density;
+        kg = item.quantity * densityInfo.value;
       }
 
       return {
         ...item,
         kg,
-        density: matchedMaterial
-          ? parseFloat(matchedMaterial.density || "0")
-          : 0,
+        density: densityInfo.value,
+        densityMin: densityInfo.min,
+        densityMax: densityInfo.max,
         co2:
           isGoodMatch && matchedMaterial
             ? (matchedMaterial.gwpTotal ?? 0) * kg
@@ -164,14 +183,19 @@ export async function POST(req: Request) {
             : `No match found for: ${item.material}`,
         matchScore,
         searchTerm,
-        availableMaterials: kgMaterials.map((m) => ({
-          id: m.uuid,
-          name: m.nameDE,
-          density: parseFloat(m.density || "0"),
-          co2: m.gwpTotal ?? 0,
-          ubp: m.ubp21Total ?? 0,
-          kwh: m.primaryEnergyNonRenewableTotal ?? 0,
-        })),
+        availableMaterials: kgMaterials.map((m) => {
+          const mDensity = parseDensity(m.density);
+          return {
+            id: m.uuid,
+            name: m.nameDE,
+            density: mDensity.value,
+            densityMin: mDensity.min,
+            densityMax: mDensity.max,
+            co2: m.gwpTotal ?? 0,
+            ubp: m.ubp21Total ?? 0,
+            kwh: m.primaryEnergyNonRenewableTotal ?? 0,
+          };
+        }),
       };
     });
 
