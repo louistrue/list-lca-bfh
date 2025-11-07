@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Papa from 'papaparse'
 
 interface CSVUploaderProps {
-  onUpload: (data: string[][], headers: string[]) => void
+  onUpload: (data: string[][], headers: string[], fileName: string) => void
 }
 
 export default function CSVUploader({ onUpload }: CSVUploaderProps) {
@@ -24,7 +24,7 @@ export default function CSVUploader({ onUpload }: CSVUploaderProps) {
             console.log(`Volume column (${headers[volumeIdx]}): "${data[1][volumeIdx]}"`)
           }
         }
-        onUpload(data.slice(1), headers)
+        onUpload(data.slice(1), headers, file.name)
       },
       // Ensure apostrophes are not treated as quote characters
       quoteChar: '"',
@@ -56,9 +56,8 @@ export default function CSVUploader({ onUpload }: CSVUploaderProps) {
 
   return (
     <div
-      className={`border-2 border-dashed p-8 text-center ${
-        isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-      }`}
+      className={`border-2 border-dashed p-8 text-center ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+        }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

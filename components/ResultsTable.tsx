@@ -55,6 +55,8 @@ interface MaterialOption {
   ubp: number;
   kwh: number;
   density?: number;
+  densityMin?: number;
+  densityMax?: number;
 }
 
 interface MaterialData {
@@ -70,6 +72,8 @@ interface MaterialData {
   matchScore: number | null;
   availableMaterials: MaterialOption[];
   density?: number;
+  densityMin?: number;
+  densityMax?: number;
 }
 
 interface ResultsTableProps {
@@ -77,6 +81,7 @@ interface ResultsTableProps {
   originalHeaders: string[];
   originalRowData: Record<string, string>[];
   onUpdateMaterial?: (indices: number[], material: MaterialOption) => void;
+  onUpdateDensity?: (index: number, density: number) => void;
   onDeleteRows?: (indices: number[]) => void;
 }
 
@@ -184,6 +189,7 @@ export default function ResultsTable({
   originalHeaders,
   originalRowData,
   onUpdateMaterial,
+  onUpdateDensity,
   onDeleteRows,
 }: ResultsTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([
@@ -225,20 +231,32 @@ export default function ResultsTable({
             const someSelected = groupRows.some((r) => r.getIsSelected());
 
             return (
-              <input
-                type="checkbox"
-                checked={allSelected}
-                ref={(el) => {
-                  if (el) {
-                    el.indeterminate = someSelected && !allSelected;
-                  }
-                }}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  groupRows.forEach((r) => r.toggleSelected(e.target.checked));
-                }}
-                className="h-4 w-4 rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
-              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={row.getToggleExpandedHandler()}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-[#24283b] rounded shrink-0"
+                >
+                  {row.getIsExpanded() ? (
+                    <ChevronDown className="w-4 h-4" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4" />
+                  )}
+                </button>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => {
+                    if (el) {
+                      el.indeterminate = someSelected && !allSelected;
+                    }
+                  }}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    groupRows.forEach((r) => r.toggleSelected(e.target.checked));
+                  }}
+                  className="h-4 w-4 rounded border-gray-300 dark:border-[#24283b] focus:ring-[#7aa2f7] dark:focus:ring-[#7aa2f7] dark:bg-[#1a1b26]"
+                />
+              </div>
             );
           }
 
@@ -253,9 +271,9 @@ export default function ResultsTable({
         },
         enableGrouping: false,
         enableSorting: false,
-        size: 50,
-        minSize: 50,
-        maxSize: 50,
+        size: 80,
+        minSize: 80,
+        maxSize: 80,
       },
       {
         accessorKey: "element",
@@ -285,16 +303,6 @@ export default function ResultsTable({
           if (isGroupedRow) {
             return (
               <div className="flex items-center gap-2 min-w-0">
-                <button
-                  onClick={row.getToggleExpandedHandler()}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-[#24283b] rounded shrink-0"
-                >
-                  {row.getIsExpanded() ? (
-                    <ChevronDown className="w-4 h-4" />
-                  ) : (
-                    <ChevronRight className="w-4 h-4" />
-                  )}
-                </button>
                 <TruncatedText className="font-medium truncate">{row.getValue<string>("element")}</TruncatedText>
                 <Badge variant="secondary" className="ml-2 shrink-0">
                   {row.subRows.length} {row.subRows.length === 1 ? "Zeile" : "Zeilen"}
@@ -445,18 +453,68 @@ export default function ResultsTable({
               <div className="text-right whitespace-normal leading-tight">Dichte (kg/m³)</div>
             ),
             cell: ({ row }: { row: any }) => {
-              const value = row.original.density;
+              const isGrouped = row.getIsGrouped();
+              if (isGrouped) {
+                return <div className="text-right font-medium">—</div>;
+              }
+
+              const rowData = row.original;
+              const rowIndex = parseInt(row.id);
+              const hasRange = rowData.densityMin !== undefined &&
+                rowData.densityMax !== undefined &&
+                rowData.densityMin !== rowData.densityMax &&
+                rowData.densityMax > 0;
+
+              // Only allow editing if there's a range, otherwise show as read-only text
+              if (!hasRange) {
+                return (
+                  <div className="text-right">
+                    {formatNumber(rowData.density)}
+                  </div>
+                );
+              }
+
               return (
                 <div className="text-right">
-                  {formatNumber(value)}
+                  <Input
+                    type="number"
+                    value={rowData.density || rowData.densityMin || 0}
+                    onChange={(e) => {
+                      const newDensity = parseFloat(e.target.value);
+                      if (!isNaN(newDensity)) {
+                        onUpdateDensity?.(rowIndex, newDensity);
+                      }
+                    }}
+                    onBlur={(e) => {
+                      // Enforce range on blur
+                      const newDensity = parseFloat(e.target.value);
+                      if (!isNaN(newDensity)) {
+                        const clamped = Math.max(
+                          rowData.densityMin || 0,
+                          Math.min(rowData.densityMax || newDensity, newDensity)
+                        );
+                        if (clamped !== newDensity) {
+                          onUpdateDensity?.(rowIndex, clamped);
+                        }
+                      }
+                    }}
+                    min={rowData.densityMin || 0}
+                    max={rowData.densityMax || undefined}
+                    step="1"
+                    className="h-8 w-20 text-right text-sm border-orange-400 dark:border-orange-600 focus:ring-orange-500"
+                    title={`Bereich: ${rowData.densityMin}–${rowData.densityMax} kg/m³ (editierbar)`}
+                  />
+                  <div className="text-xs text-orange-600 dark:text-orange-400 mt-0.5 font-medium">
+                    {rowData.densityMin}–{rowData.densityMax}
+                  </div>
                 </div>
               );
             },
             enableGrouping: false,
             enableSorting: false,
-            size: 120,
-            minSize: 100,
-            maxSize: 140,
+            size: 140,
+            minSize: 120,
+            maxSize: 160,
           } as ColumnDef<MaterialData>,
           {
             accessorKey: "kg" as const,
@@ -650,6 +708,9 @@ export default function ResultsTable({
       globalFilter: debouncedGlobalFilter,
       columnFilters,
       pagination,
+      columnPinning: {
+        left: ['select'],
+      },
     },
     onSortingChange: setSorting,
     onRowSelectionChange: setRowSelection,
@@ -666,9 +727,13 @@ export default function ResultsTable({
     globalFilterFn,
     enableRowSelection: true,
     enableGrouping: true,
+    enableColumnPinning: true,
     getRowId: (row, index) => `${index}`,
     initialState: {
       grouping: [],
+      columnPinning: {
+        left: ['select'],
+      },
     },
   });
 
@@ -915,24 +980,30 @@ export default function ResultsTable({
             <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-[#24283b]">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      className="px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6] border-b border-gray-200 dark:border-[#24283b]"
-                      style={{
-                        width: header.getSize(),
-                        minWidth: header.column.columnDef.minSize,
-                        maxWidth: header.column.columnDef.maxSize,
-                      }}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
+                  {headerGroup.headers.map((header) => {
+                    const isPinned = header.column.getIsPinned();
+                    return (
+                      <th
+                        key={header.id}
+                        className={cn(
+                          "px-3 py-3 text-left text-sm font-medium text-gray-500 dark:text-[#a9b1d6] border-b border-gray-200 dark:border-[#24283b]",
+                          isPinned && "sticky left-0 z-20 bg-gray-50 dark:bg-[#24283b]"
                         )}
-                    </th>
-                  ))}
+                        style={{
+                          width: header.getSize(),
+                          minWidth: header.column.columnDef.minSize,
+                          maxWidth: header.column.columnDef.maxSize,
+                        }}
+                      >
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                      </th>
+                    );
+                  })}
                 </tr>
               ))}
             </thead>
@@ -966,22 +1037,29 @@ export default function ResultsTable({
                         transform: `translateY(${virtualRow.start - rowVirtualizer.options.scrollMargin}px)`,
                       }}
                     >
-                      {row.getVisibleCells().map((cell) => (
-                        <td
-                          key={cell.id}
-                          className="px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
-                          style={{
-                            width: cell.column.getSize(),
-                            minWidth: cell.column.columnDef.minSize,
-                            maxWidth: cell.column.columnDef.maxSize,
-                          }}
-                        >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </td>
-                      ))}
+                      {row.getVisibleCells().map((cell) => {
+                        const isPinned = cell.column.getIsPinned();
+                        return (
+                          <td
+                            key={cell.id}
+                            className={cn(
+                              "px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]",
+                              isPinned && "sticky left-0 z-10 bg-white dark:bg-[#1a1b26]",
+                              isPinned && row.getIsSelected() && "bg-blue-50 dark:bg-[#24283b]"
+                            )}
+                            style={{
+                              width: cell.column.getSize(),
+                              minWidth: cell.column.columnDef.minSize,
+                              maxWidth: cell.column.columnDef.maxSize,
+                            }}
+                          >
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })
@@ -998,22 +1076,30 @@ export default function ResultsTable({
                       row.getIsGrouped() && "bg-gray-50 dark:bg-[#24283b]"
                     )}
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]"
-                        style={{
-                          width: cell.column.getSize(),
-                          minWidth: cell.column.columnDef.minSize,
-                          maxWidth: cell.column.columnDef.maxSize,
-                        }}
-                      >
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </td>
-                    ))}
+                    {row.getVisibleCells().map((cell) => {
+                      const isPinned = cell.column.getIsPinned();
+                      return (
+                        <td
+                          key={cell.id}
+                          className={cn(
+                            "px-3 py-2 text-sm text-gray-900 dark:text-[#a9b1d6]",
+                            isPinned && "sticky left-0 z-10 bg-white dark:bg-[#1a1b26]",
+                            isPinned && row.getIsSelected() && "bg-blue-50 dark:bg-[#24283b]",
+                            isPinned && row.getIsGrouped() && "bg-gray-50 dark:bg-[#24283b]"
+                          )}
+                          style={{
+                            width: cell.column.getSize(),
+                            minWidth: cell.column.columnDef.minSize,
+                            maxWidth: cell.column.columnDef.maxSize,
+                          }}
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))
               )}

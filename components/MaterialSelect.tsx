@@ -25,6 +25,8 @@ interface MaterialOption {
     ubp: number;
     kwh: number;
     density?: number;
+    densityMin?: number;
+    densityMax?: number;
 }
 
 interface MaterialSelectProps {
@@ -159,12 +161,24 @@ export default function MaterialSelect({
                                             )}
                                         />
                                     </div>
-                                    <div className="flex gap-3 text-xs text-muted-foreground">
+                                    <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
                                         <span>CO₂: {material.co2.toFixed(2)}</span>
                                         <span>UBP: {material.ubp.toFixed(0)}</span>
                                         <span>kWh: {material.kwh.toFixed(2)}</span>
-                                        {showDensity && material.density && (
-                                            <span>ρ: {material.density.toFixed(0)} kg/m³</span>
+                                        {showDensity && material.density !== undefined && (
+                                            <>
+                                                {material.densityMin !== material.densityMax && 
+                                                 material.densityMax && 
+                                                 material.densityMax > 0 ? (
+                                                    <span className="text-orange-600 dark:text-orange-400 font-bold">
+                                                        ρ: {material.densityMin}–{material.densityMax} kg/m³ (editierbar)
+                                                    </span>
+                                                ) : (
+                                                    <span>
+                                                        ρ: {material.density.toFixed(0)} kg/m³
+                                                    </span>
+                                                )}
+                                            </>
                                         )}
                                     </div>
                                 </CommandItem>
